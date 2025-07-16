@@ -6,13 +6,12 @@
 
 using namespace std::chrono;
 
-// Node for the doubly linked list
 struct Node {
     int key;
     int value;
     Node* prev;
     Node* next;
-    steady_clock::time_point expiry; // Expiration time for TTL
+    steady_clock::time_point expiry;
 
     Node(int k, int v, steady_clock::time_point exp) 
         : key(k), value(v), prev(nullptr), next(nullptr), expiry(exp) {}
@@ -22,16 +21,15 @@ class LRUCache {
 private:
     int capacity;
     std::unordered_map<int, Node*> cacheMap;
-    Node* head; // Most recently used
-    Node* tail; // Least recently used
+    Node* head;  // Most recently used node
+    Node* tail;  // Least recently used node
     std::mutex mtx;
+    int hits;
+    int misses;
 
-    int hits;   // Count of cache hits
-    int misses; // Count of cache misses
-
+    // Removes a node from the linked list
     void removeNode(Node* node) {
         if (!node) return;
-
         if (node->prev)
             node->prev->next = node->next;
         else
@@ -43,19 +41,20 @@ private:
             tail = node->prev;
     }
 
+    // Inserts a node at the front (marks as most recently used)
     void insertAtFront(Node* node) {
         node->prev = nullptr;
         node->next = head;
 
         if (head)
             head->prev = node;
-
         head = node;
 
         if (!tail)
             tail = head;
     }
 
+    // Checks if a node has expired
     bool isExpired(Node* node) {
         return node->expiry != steady_clock::time_point() &&
                steady_clock::now() > node->expiry;
@@ -117,8 +116,15 @@ public:
         Node* curr = head;
         std::cout << "Cache [MRU -> LRU]: ";
         while (curr) {
-            std::cout << "(" << curr->key << "," << curr->value << ") ";
-            curr = curr->next;
+            Node* nextNode = curr->next;
+            if (isExpired(curr)) {
+                removeNode(curr);
+                cacheMap.erase(curr->key);
+                delete curr;
+            } else {
+                std::cout << "(" << curr->key << "," << curr->value << ") ";
+            }
+            curr = nextNode;
         }
         std::cout << "\n";
     }
@@ -142,7 +148,6 @@ void runTests() {
     std::cout << "\nRunning automated tests...\n";
     LRUCache cache(2);
 
-    // Test 1: Insert and get
     cache.put(1, 10);
     cache.put(2, 20);
 
@@ -152,8 +157,7 @@ void runTests() {
         std::cout << "Test 1 passed: Key 1 has value 10\n";
     }
 
-    // Test 2: LRU eviction
-    cache.put(3, 30); // should evict key 2
+    cache.put(3, 30); // evicts key 2
 
     if (cache.get(2) != -1) {
         std::cout << "Test 2 failed: Expected -1 for evicted key 2\n";
@@ -161,7 +165,6 @@ void runTests() {
         std::cout << "Test 2 passed: Key 2 correctly evicted\n";
     }
 
-    // Test 3: TTL expiration
     cache.put(4, 40, 1); // TTL 1 second
     std::this_thread::sleep_for(std::chrono::seconds(2));
 
@@ -171,7 +174,6 @@ void runTests() {
         std::cout << "Test 3 passed: Key 4 expired as expected\n";
     }
 
-    // Test 4: Eviction after new puts
     cache.put(5, 50);
     cache.put(6, 60); // evicts key 1
 
@@ -181,9 +183,7 @@ void runTests() {
         std::cout << "Test 4 passed: Key 1 correctly evicted\n";
     }
 
-    // Test 5: Show stats
     cache.showStats();
-
     std::cout << "All tests finished.\n";
 }
 
@@ -250,4 +250,3 @@ int main() {
 
     return 0;
 }
-
